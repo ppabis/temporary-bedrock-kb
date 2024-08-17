@@ -1,0 +1,6 @@
+---
+# CloudFormation template
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: 'Bedrock Knowledge Base and OpenSearch Collection'
+
