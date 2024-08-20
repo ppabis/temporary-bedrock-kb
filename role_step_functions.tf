@@ -43,6 +43,11 @@ data "aws_iam_policy_document" "StepFunctionsPolicy" {
     ]
     resources = ["*"]
   }
+
+  statement {
+    actions   = ["lambda:InvokeFunction"]
+    resources = ["${aws_lambda_function.create_index.arn}:*"]
+  }
 }
 
 resource "aws_iam_role" "StepFunctionsRole" {
