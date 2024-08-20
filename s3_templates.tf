@@ -40,9 +40,16 @@ resource "aws_s3_bucket_policy" "CloudFormationTemplates" {
   policy = data.aws_iam_policy_document.CloudFormationTemplatesGetList.json
 }
 
-resource "aws_s3_object" "CloudFormationTemplate" {
+resource "aws_s3_object" "CollectionTemplate" {
   bucket         = aws_s3_bucket.CloudFormationTemplates.bucket
-  key            = "knowledge-base-and-collection.yml"
-  content_base64 = filebase64("knowledge-base-and-collection.yml")
-  source_hash    = filemd5("knowledge-base-and-collection.yml") # will help with the object updates
+  key            = "collection.yml"
+  content_base64 = filebase64("${path.module}/cloudformation/collection.yml")
+  source_hash    = filemd5("${path.module}/cloudformation/collection.yml") # will help with the object updates
+}
+
+resource "aws_s3_object" "KnowledgeBaseTemplate" {
+  bucket         = aws_s3_bucket.CloudFormationTemplates.bucket
+  key            = "knowledge-base.yml"
+  content_base64 = filebase64("${path.module}/cloudformation/knowledge-base.yml")
+  source_hash    = filemd5("${path.module}/cloudformation/knowledge-base.yml") # will help with the object updates
 }
