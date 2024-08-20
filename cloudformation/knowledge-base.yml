@@ -1,0 +1,54 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Bedrock Knowledge Base and OpenSearch Collection
+
+Parameters:
+  KnowledgeBucket:
+    Type: String
+    Description: S3 bucket name containing knowledge base content
+  
+  BedrockRoleArn:
+    Type: String
+    Description: ARN of the Bedrock KB role
+
+  EmbeddingModelArn:
+    Type: String
+    Description: ARN of the embedding model
+
+  VectorIndexName:
+    Type: String
+    Description: Name of the vector index
+    Default: "mykbvectorindex"
+
+Resources:
+
+  KnowledgeBase:
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: !Sub "${AWS::StackName}-knowledge-base"
+      RoleArn: !Ref BedrockRoleArn
+      KnowledgeBaseConfiguration:
+        Type: VECTOR
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Ref EmbeddingModelArn
+      StorageConfiguration: 
+        Type: OPENSEARCH_SERVERLESS
+        OpensearchServerlessConfiguration:
+          CollectionArn: !GetAtt VectorCollection.Arn
+          VectorIndexName: !Ref VectorIndexName
+          FieldMapping:
+            MetadataField: metadata
+            VectorField: vector
+            TextField: chunk
+    DependsOn: [ AccessPolicy, NetworkPolicy ]
+  
+  DataSource:
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      Name: !Sub "${AWS::StackName}-DataSource"
+      KnowledgeBaseId: !Ref KnowledgeBase
+      DataSourceConfiguration: 
+        Type: S3
+        S3Configuration:
+          BucketArn: !Sub "arn:aws:s3:::${KnowledgeBucket}"

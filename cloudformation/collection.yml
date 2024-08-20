@@ -1,0 +1,96 @@
+---
+# CloudFormation template for the OpenSearch Collection
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: OpenSearch Collection for our Knowledge Base
+
+Parameters:
+  BedrockRoleArn:
+    Type: String
+    Description: ARN of the Bedrock KB role
+  
+  LambdaRoleArn:
+    Type: String
+    Description: ARN of the Lambda role that will create index
+
+Resources:
+
+  VectorCollection:
+    Type: AWS::OpenSearchServerless::Collection
+    Properties:
+      Name: !Sub "${AWS::StackName}-collection"
+      StandbyReplicas: DISABLED
+      Type: VECTORSEARCH
+    DependsOn: EncryptionPolicy
+
+  AccessPolicy:
+    Type: AWS::OpenSearchServerless::AccessPolicy
+    Properties:
+      Name: !Sub "${AWS::StackName}-access"
+      Type: data
+      Policy:
+        !Sub >-
+          [{
+              "Principal": [ 
+                "${BedrockRoleArn}",
+                "${LambdaRoleArn}"
+              ],
+              "Rules":
+              [
+                {
+                  "Resource": [ "collection/${AWS::StackName}-collection" ],
+                  "Permission": [
+                    "aoss:DescribeCollectionItems",
+                    "aoss:CreateCollectionItems",
+                    "aoss:UpdateCollectionItems"
+                  ],
+                  "ResourceType": "collection"
+                },
+                {
+                  "Resource": [ "index/${AWS::StackName}-collection/*" ],
+                  "Permission": [
+                    "aoss:UpdateIndex",
+                    "aoss:DescribeIndex",
+                    "aoss:ReadDocument",
+                    "aoss:WriteDocument",
+                    "aoss:CreateIndex"
+                  ],
+                  "ResourceType": "index"
+                }
+              ]
+           }]
+
+  EncryptionPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: !Sub "${AWS::StackName}-encryption"
+      Type: encryption
+      # It cannot reference VectorCollection as the collection depends on an encryption policy
+      # in the first place. So, we have to hardcode the collection name here.
+      Policy: !Sub >-
+        {"Rules":[{
+          "ResourceType": "collection",
+          "Resource": [ "collection/${AWS::StackName}-collection" ]
+        }],
+        "AWSOwnedKey": true
+        }
+  
+  NetworkPolicy:
+    Type: AWS::OpenSearchServerless::SecurityPolicy
+    Properties:
+      Name: !Sub "${AWS::StackName}-network"
+      Type: network
+      Policy: !Sub >-
+        [{ "Rules": [
+            {
+                "Resource": [ "collection/${AWS::StackName}-collection" ],
+                "ResourceType": "dashboard"
+              },
+              {
+                "Resource": [ "collection/${AWS::StackName}-collection" ],
+                "ResourceType": "collection"
+              }
+            ],
+            "AllowFromPublic": true
+          }
+        ]
