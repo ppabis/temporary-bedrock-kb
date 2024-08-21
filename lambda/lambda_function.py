@@ -51,10 +51,11 @@ def create_vector_index(vectorName, dimensions, textName, metadataName):
   return json.dumps(template)
 
 def lambda_handler(event, context):
-  
   # Create a request for new index creation
   data = create_vector_index(event['vectorName'], event['vectorDimensions'], event['textName'], event['metadataName'])
-  endpoint = event['aossEndpoint'].replace('https://', '')
+  # Step Functions pass state doesn't work as expected by data flow simulator 🤔 as it outputs a list instead of a single value
+  aossEndpoint = event['aossEndpoint'][0] if isinstance(event['aossEndpoint'], list) else event['aossEndpoint']
+  endpoint = aossEndpoint.replace('https://', '')
   indexName = event['vectorIndexName']
   
   # Create AOSS client
