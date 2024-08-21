@@ -20,6 +20,34 @@ Parameters:
     Type: String
     Description: Name of the vector index
     Default: "mykbvectorindex"
+  
+  VectorCollectionArn:
+    Type: String
+    Description: ARN of the OpenSearch Collection
+
+  MetadataFieldName:
+    Type: String
+    Description: Name of the metadata field
+    Default: "metadata"
+  
+  VectorFieldName:
+    Type: String
+    Description: Name of the embedding vector field
+    Default: "vector"
+
+  TextFieldName:
+    Type: String
+    Description: Name of the text field
+    Default: "chunk"
+
+Outputs:
+  KnowledgeBase:
+    Description: Id of the Bedrock Knowledge Base
+    Value: !Ref KnowledgeBase
+
+  DataSource:
+    Description: Id of the Bedrock DataSource
+    Value: !GetAtt DataSource.DataSourceId
 
 Resources:
 
@@ -35,13 +63,12 @@ Resources:
       StorageConfiguration: 
         Type: OPENSEARCH_SERVERLESS
         OpensearchServerlessConfiguration:
-          CollectionArn: !GetAtt VectorCollection.Arn
+          CollectionArn: !Ref VectorCollectionArn
           VectorIndexName: !Ref VectorIndexName
           FieldMapping:
-            MetadataField: metadata
-            VectorField: vector
-            TextField: chunk
-    DependsOn: [ AccessPolicy, NetworkPolicy ]
+            MetadataField: !Ref MetadataFieldName
+            VectorField: !Ref VectorFieldName
+            TextField: !Ref TextFieldName
   
   DataSource:
     Type: AWS::Bedrock::DataSource
