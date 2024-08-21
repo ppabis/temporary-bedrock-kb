@@ -14,7 +14,7 @@ data "aws_iam_policy_document" "CloudFormationTemplatesGetList" {
     principals {
       type = "AWS"
       identifiers = [
-        aws_iam_role.CloudFromationRole.arn,
+        aws_iam_role.CloudFormationRole.arn,
         aws_iam_role.StepFunctionsRole.arn
       ]
     }
@@ -26,7 +26,7 @@ data "aws_iam_policy_document" "CloudFormationTemplatesGetList" {
     principals {
       type = "AWS"
       identifiers = [
-        aws_iam_role.CloudFromationRole.arn,
+        aws_iam_role.CloudFormationRole.arn,
         aws_iam_role.StepFunctionsRole.arn
       ]
     }
