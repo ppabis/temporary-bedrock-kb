@@ -20,7 +20,7 @@ data "aws_iam_policy_document" "StepFunctionsPolicy" {
 
   statement {
     actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.CloudFromationRole.arn]
+    resources = [aws_iam_role.CloudFormationRole.arn]
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
@@ -53,4 +53,10 @@ data "aws_iam_policy_document" "StepFunctionsPolicy" {
 resource "aws_iam_role" "StepFunctionsRole" {
   name               = "StepFunctionsBedrockKBRole"
   assume_role_policy = data.aws_iam_policy_document.StepFunctionsTrustPolicy.json
+}
+
+resource "aws_iam_role_policy" "StepFunctionsRoleInline" {
+  name   = "StepFunctionsRoleInline"
+  role   = aws_iam_role.StepFunctionsRole.name
+  policy = data.aws_iam_policy_document.StepFunctionsPolicy.json
 }
