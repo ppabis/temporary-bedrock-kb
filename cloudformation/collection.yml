@@ -13,6 +13,19 @@ Parameters:
     Type: String
     Description: ARN of the Lambda role that will create index
 
+Outputs:
+  CollectionArn:
+    Description: ARN of the OpenSearch Collection
+    Value: !GetAtt VectorCollection.Arn
+  
+  CollectionEndpoint:
+    Description: Endpoint of the OpenSearch Collection
+    Value: !GetAtt VectorCollection.CollectionEndpoint
+
+  CollectionId:
+    Description: ID of the OpenSearch Collection
+    Value: !Ref VectorCollection
+
 Resources:
 
   VectorCollection:
