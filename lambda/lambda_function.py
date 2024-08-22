@@ -71,6 +71,10 @@ def lambda_handler(event, context):
   response = client.indices.create(index=indexName, body=data)
 
   pprint(response)
+
+  get_index = client.indices.get(index=indexName)
+  
+  pprint(get_index)
   
   # Return the response from the API directly into Lambda
   if 'acknowledged' in response and response['acknowledged']:

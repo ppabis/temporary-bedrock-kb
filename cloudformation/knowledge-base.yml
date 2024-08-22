@@ -75,6 +75,7 @@ Resources:
     Properties:
       Name: !Sub "${AWS::StackName}-DataSource"
       KnowledgeBaseId: !Ref KnowledgeBase
+      DataDeletionPolicy: RETAIN # Helps in case the OpenSearch collection is deleted before this
       DataSourceConfiguration: 
         Type: S3
         S3Configuration:
