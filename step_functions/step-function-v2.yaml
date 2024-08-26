@@ -1,0 +1,382 @@
+Comment: >-
+ This is an improved version of the Step Functions machine. It has more clean outputs
+ and merged some choice steps.
+StartAt: Create OSS Stack
+States:
+  # Creating the OpenSearch Collection
+  # OSS = OpenSearch Serverless
+  # Output is saved to $.CollectionStack except for the
+  # Get OSS Stack Outputs step where we feed the output
+  # almost directly to Lambda as an event. But the $.CollectionStack
+  # part is preserved.
+  Create OSS Stack:
+    Type: Task
+    Parameters:
+      StackName: '${oss_collection_stack_name}'
+      TemplateURL: '${oss_collection_template_url}'
+      RoleARN: '${cloudformation_role_arn}'
+      Parameters:
+        - ParameterKey: BedrockRoleArn
+          ParameterValue: '${bedrock_role_arn}'
+        - ParameterKey: LambdaRoleArn
+          ParameterValue: '${lambda_role_arn}'
+    Resource: arn:aws:states:::aws-sdk:cloudformation:createStack
+    Next: Wait a bit for SDK sync
+    ResultPath: $.CollectionStack
+  
+  Wait a bit for SDK sync:
+    Type: Wait
+    Seconds: 2
+    Next: Get OSS Stack Progress
+  
+  Wait for OSS stack:
+    Type: Wait
+    Seconds: 30
+    Next: Get OSS Stack Progress
+  
+  Get OSS Stack Progress:
+    Type: Task
+    Parameters:
+      StackName.$: $.CollectionStack.StackId
+    Resource: arn:aws:states:::aws-sdk:cloudformation:describeStacks
+    Next: Is OSS Stack Created
+    ResultSelector:
+      StackId.$: $.Stacks[0].StackId
+      StackStatus.$: $.Stacks[0].StackStatus
+    ResultPath: $.CollectionStack
+  
+  Is OSS Stack Created:
+    Type: Choice
+    Choices:
+      - Variable: $.CollectionStack.StackStatus
+        StringEquals: CREATE_COMPLETE
+        Next: Get OSS Stack Outputs
+      - Variable: $.CollectionStack.StackStatus
+        StringEquals: CREATE_IN_PROGRESS
+        Comment: Stack is CREATE_IN_PROGRESS
+        Next: Wait for OSS stack
+    Default: Delete Collection Stack
+    Comment: Checks whether the stack was created
+  
+  Get OSS Stack Outputs:
+    Type: Task
+    Parameters:
+      StackName.$: $.CollectionStack.StackId
+    Resource: arn:aws:states:::aws-sdk:cloudformation:describeStacks
+    Next: Create Index
+    ResultSelector:
+      aossEndpoint.$: $.Stacks[0]..Outputs[?(@.OutputKey==CollectionEndpoint)].OutputValue
+      collectionArn.$: $.Stacks[0]..Outputs[?(@.OutputKey==CollectionArn)].OutputValue
+      vectorIndexName: '${vector_index_name}'
+      vectorName: '${vector_name}'
+      vectorDimensions: '${vector_dimensions}'
+      textName: '${text_name}'
+      metadataName: '${metadata_name}'
+      CollectionStack: # Preserves the expected $.CollectionStack
+        StackId.$: $.Stacks[0].StackId
+  
+  # Create index using Lambda in the collection created above.
+  Create Index:
+    Type: Task
+    Resource: arn:aws:states:::lambda:invoke
+    Parameters:
+      Payload.$: $
+      FunctionName: '${lambda_function_arn_version}'
+    Retry:
+      - ErrorEquals:
+          - Lambda.ServiceException
+          - Lambda.AWSLambdaException
+          - Lambda.SdkClientException
+          - Lambda.TooManyRequestsException
+        IntervalSeconds: 1
+        MaxAttempts: 3
+        BackoffRate: 2
+    Next: Index Successful
+    ResultPath: $.Result
+    Catch:
+      - ErrorEquals:
+          - States.ALL
+        Comment: On Any Error just Delete The Stack and fail
+        Next: Delete Collection Stack
+        ResultPath: null
+  
+  Index Successful:
+    Type: Choice
+    Choices:
+      - Variable: $.Result.Payload.statusCode
+        NumericEquals: 200
+        Next: Wait for Index sync
+        Comment: Index created
+    Default: Delete Collection Stack
+  
+  Wait for Index sync:
+    Type: Wait
+    Seconds: 60
+    Next: CreateKBStack
+    Comment: >-
+      Can be unfortunately long...
+      I gave it 1 minute but usually it is faster.
+      Sometimes it's even immediate.
+  
+  # Creating the Knowledge Base Stack
+  # Outputs of this block are $.KBStack for the StackId
+  # and $.KBStackOutputs for the Outputs needed to be passed
+  # to other steps.
+  CreateKBStack:
+    Type: Task
+    Parameters:
+      StackName: '${kb_stack_name}'
+      TemplateURL: '${kb_stack_template_url}'
+      RoleARN: '${cloudformation_role_arn}'
+      Parameters:
+        - ParameterKey: BedrockRoleArn
+          ParameterValue: '${bedrock_role_arn}'
+        - ParameterKey: VectorIndexName
+          ParameterValue.$: $.vectorIndexName
+        - ParameterKey: VectorCollectionArn
+          ParameterValue.$: $.collectionArn[0]
+        - ParameterKey: MetadataFieldName
+          ParameterValue.$: $.metadataName
+        - ParameterKey: VectorFieldName
+          ParameterValue.$: $.vectorName
+        - ParameterKey: TextFieldName
+          ParameterValue.$: $.textName
+        - ParameterKey: EmbeddingModelArn
+          ParameterValue: '${embedding_model_arn}'
+        - ParameterKey: KnowledgeBucket
+          ParameterValue: '${knowledge_bucket_name}'
+    Resource: arn:aws:states:::aws-sdk:cloudformation:createStack
+    Next: Get KB Stack Progress
+    ResultPath: $.KBStack
+  
+  Get KB Stack Progress:
+    Type: Task
+    Parameters:
+      StackName.$: $.KBStack.StackId
+    Resource: arn:aws:states:::aws-sdk:cloudformation:describeStacks
+    Next: Is KB Stack created
+    ResultSelector:
+      StackId.$: $.Stacks[0].StackId
+      StackStatus.$: $.Stacks[0].StackStatus
+    ResultPath: $.KBStack
+  
+  Wait for KB Stack:
+    Type: Wait
+    Seconds: 10
+    Next: Get KB Stack Progress
+  
+  Is KB Stack created:
+    Type: Choice
+    Choices:
+      - Variable: $.KBStack.StackStatus
+        StringEquals: CREATE_IN_PROGRESS
+        Comment: Creating KB Stack
+        Next: Wait for KB Stack
+      - Variable: $.KBStack.StackStatus
+        StringEquals: CREATE_COMPLETE
+        Next: Get KB Stack Outputs
+    Default: DeleteKBStack
+  
+  Get KB Stack Outputs:
+    Type: Task
+    Parameters:
+      StackName.$: $.KBStack.StackId
+    Resource: arn:aws:states:::aws-sdk:cloudformation:describeStacks
+    Next: StartIngestionJob
+    ResultSelector:
+      DataSource.$: $.Stacks[0]..Outputs[?(@.OutputKey==DataSource)].OutputValue
+      KnowledgeBase.$: $.Stacks[0]..Outputs[?(@.OutputKey==KnowledgeBase)].OutputValue
+    ResultPath: $.KBStackOutputs
+  
+  # Synchronize the Knowledge Base with our S3 bucket
+  StartIngestionJob:
+    Type: Task
+    Parameters:
+      DataSourceId.$: $.KBStackOutputs.DataSource[0]
+      KnowledgeBaseId.$: $.KBStackOutputs.KnowledgeBase[0]
+    Resource: arn:aws:states:::aws-sdk:bedrockagent:startIngestionJob
+    Next: GetIngestionJob
+    ResultPath: $.IngestionJob
+  
+  GetIngestionJob:
+    Type: Task
+    Parameters:
+      DataSourceId.$: $.IngestionJob.IngestionJob.DataSourceId
+      IngestionJobId.$: $.IngestionJob.IngestionJob.IngestionJobId
+      KnowledgeBaseId.$: $.IngestionJob.IngestionJob.KnowledgeBaseId
+    Resource: arn:aws:states:::aws-sdk:bedrockagent:getIngestionJob
+    Next: Is Ingestion Complete
+    ResultPath: $.IngestionJob
+  
+  Ingestion Wait:
+    Type: Wait
+    Seconds: 30
+    Next: GetIngestionJob
+  
+  Is Ingestion Complete:
+    Type: Choice
+    Choices:
+      - Variable: $.IngestionJob.IngestionJob.Status
+        StringEquals: COMPLETE
+        Comment: Success
+        Next: Parallel
+      - Variable: $.IngestionJob.IngestionJob.Status
+        StringEquals: FAILED
+        Next: DeleteKBStack
+        Comment: Fail
+    Default: Ingestion Wait
+  
+  # Performing the inference with RAG from the Knowledge Base
+  Parallel:
+    Type: Parallel
+    Next: Cleanup KB Stack
+    Branches:
+
+      - StartAt: Question1
+        States:
+          Question1:
+            Type: Task
+            Parameters:
+              Input:
+                Text: >-
+                  What are the instances that can use instance store as the root
+                  device?
+
+                  Format the output is similar to the following:
+                  {"InstanceTypes":["A1","B2","C3"]}
+              RetrieveAndGenerateConfiguration:
+                Type: KNOWLEDGE_BASE
+                KnowledgeBaseConfiguration:
+                  KnowledgeBaseId.$: $.IngestionJob.IngestionJob.KnowledgeBaseId
+                  ModelArn: '${inference_model_arn}'
+                  GenerationConfiguration:
+                    InferenceConfig:
+                      TextInferenceConfig:
+                        MaxTokens: ${inference_max_tokens}
+                        Temperature: ${inference_temperature}
+                        TopP: ${inference_top_p}
+            Resource: arn:aws:states:::aws-sdk:bedrockagentruntime:retrieveAndGenerate
+            Next: Question1 Save
+            ResultPath: $.RAGResult
+          Question1 Save:
+            Type: Task
+            Parameters:
+              Body.$: $.RAGResult
+              Bucket: '${output_bucket_name}'
+              Key.$: States.Format('ec2_store/{}.json', $$.State.EnteredTime)
+            Resource: arn:aws:states:::aws-sdk:s3:putObject
+            End: true
+      
+      - StartAt: Question2
+        States:
+          Question2:
+            Type: Task
+            Parameters:
+              Input:
+                Text: >-
+                  What are the discounts on reserved instances compared to
+                  on-demand instances?
+              RetrieveAndGenerateConfiguration:
+                Type: KNOWLEDGE_BASE
+                KnowledgeBaseConfiguration:
+                  KnowledgeBaseId.$: $.IngestionJob.IngestionJob.KnowledgeBaseId
+                  ModelArn: '${inference_model_arn}'
+                  GenerationConfiguration:
+                    InferenceConfig:
+                      TextInferenceConfig:
+                        MaxTokens: ${inference_max_tokens}
+                        Temperature: ${inference_temperature}
+                        TopP: ${inference_top_p}
+            Resource: arn:aws:states:::aws-sdk:bedrockagentruntime:retrieveAndGenerate
+            ResultPath: $.RAGResult
+            Next: Question2 Save
+          Question2 Save:
+            Type: Task
+            Parameters:
+              Body.$: $.RAGResult
+              Bucket: '${output_bucket_name}'
+              Key.$: States.Format('ec2_discount/{}.json', $$.State.EnteredTime)
+            Resource: arn:aws:states:::aws-sdk:s3:putObject
+            End: true
+      
+      - StartAt: Question3
+        States:
+          Question3:
+            Type: Task
+            Parameters:
+              Input:
+                Text: >-
+                  What does Domain 1 and 2 consist in Machine Learning Associate
+                  exam?
+              RetrieveAndGenerateConfiguration:
+                Type: KNOWLEDGE_BASE
+                KnowledgeBaseConfiguration:
+                  KnowledgeBaseId.$: $.IngestionJob.IngestionJob.KnowledgeBaseId
+                  ModelArn: '${inference_model_arn}'
+                  GenerationConfiguration:
+                    InferenceConfig:
+                      TextInferenceConfig:
+                        MaxTokens: ${inference_max_tokens}
+                        Temperature: ${inference_temperature}
+                        TopP: ${inference_top_p}
+            Resource: arn:aws:states:::aws-sdk:bedrockagentruntime:retrieveAndGenerate
+            ResultPath: $.RAGResult
+            Next: Question3 Save
+          Question3 Save:
+            Type: Task
+            Parameters:
+              Body.$: $.RAGResult
+              Bucket: '${output_bucket_name}'
+              Key.$: States.Format('mle_domain/{}.json', $$.State.EnteredTime)
+            Resource: arn:aws:states:::aws-sdk:s3:putObject
+            End: true
+    ResultPath: null
+
+  # Failure cleanup
+  DeleteKBStack:
+    Type: Task
+    Parameters:
+      StackName.$: $.KBStack.StackId
+    Resource: arn:aws:states:::aws-sdk:cloudformation:deleteStack
+    Next: Wait For Stack Deletion On Fail
+    ResultPath: $.KBStack
+  
+  Wait For Stack Deletion On Fail:
+    Type: Wait
+    Seconds: 10
+    Next: Delete Collection Stack
+  
+  Delete Collection Stack:
+    Type: Task
+    Parameters:
+      StackName.$: $.CollectionStack.StackId
+    Resource: arn:aws:states:::aws-sdk:cloudformation:deleteStack
+    Next: Fail
+  
+  Fail:
+    Type: Fail
+  
+  # Success cleanup
+  Cleanup KB Stack:
+    Type: Task
+    Parameters:
+      StackName.$: $.KBStack.StackId
+    Resource: arn:aws:states:::aws-sdk:cloudformation:deleteStack
+    Next: Wait For Stack Deletion
+    ResultPath: null
+  
+  Wait For Stack Deletion:
+    Type: Wait
+    Seconds: 10
+    Next: Cleanup Stack
+  
+  Cleanup Stack:
+    Type: Task
+    Parameters:
+      StackName.$: $.CollectionStack.StackId
+    Resource: arn:aws:states:::aws-sdk:cloudformation:deleteStack
+    Next: Success
+    ResultPath: null
+  Success:
+    Type: Succeed
+  
