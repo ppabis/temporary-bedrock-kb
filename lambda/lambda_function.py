@@ -3,9 +3,6 @@ from requests_aws4auth import AWS4Auth
 import boto3, json, os
 from pprint import pprint
 
-# Setup the AWS client globally
-Oss = boto3.client('opensearchserverless')
-
 # Setup AWS credentials that can be passed later to OpenSearch endpoint
 Credentials = boto3.Session().get_credentials()
 AwsAuth = AWS4Auth(
