@@ -1,3 +1,13 @@
+This project aims to make using Bedrock Knowledge Base with OpenSearch
+Serverless cheaper by removing the collection after use. It runs a Step Function
+calling CloudFormation and Lambda to do just that.
+
+Read more in these posts:
+
+[Cut Costs in OpenSearch Serverless and Bedrock Knowledge Base](https://dev.to/aws-builders/cut-costs-in-opensearch-serverless-and-bedrock-knowledge-base-354c)
+
+[Cut Costs in OpenSearch Serverless and Bedrock Knowledge Base Part 2]()
+
 Setting region
 --------------
 In some places there might be a leftover from `us-west-2`. Ideally just search
